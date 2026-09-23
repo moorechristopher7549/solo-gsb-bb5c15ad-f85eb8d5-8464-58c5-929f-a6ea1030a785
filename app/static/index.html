@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>抗裁切水印实验台 · Block-DCT Watermark Bench</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">◳</span>
+      <div>
+        <h1>抗裁切水印实验台</h1>
+        <p>分块 DCT 频域嵌入 · 同步标记平铺 · 重复块多数表决 · JPEG / 中心裁切检测</p>
+      </div>
+    </div>
+    <div class="steps">
+      <span class="step active" data-step="1">1 嵌入</span>
+      <span class="arrow">→</span>
+      <span class="step" data-step="2">2 施加攻击</span>
+      <span class="arrow">→</span>
+      <span class="step" data-step="3">3 检测 / 标注</span>
+    </div>
+  </header>
+
+  <main class="layout">
+    <!-- ===================== 左栏：控制台 ===================== -->
+    <section class="panel" id="panel-embed">
+      <h2><span class="num">①</span> 嵌入水印</h2>
+
+      <label class="field">
+        <span>原始图片（最短边 ≥ 128px，建议 ≥ 512px）</span>
+        <input type="file" id="embed-file" accept="image/png,image/jpeg,image/webp,image/bmp" />
+      </label>
+
+      <label class="field">
+        <span>水印短文本（最多 45 字节 / 约 15 个汉字）</span>
+        <input type="text" id="embed-text" maxlength="120" placeholder="例如：机密-2026-AB12" />
+        <small id="text-counter" class="muted">0 字节</small>
+      </label>
+
+      <div class="field">
+        <span>嵌入强度</span>
+        <div class="seg" id="strength-seg">
+          <button type="button" data-value="low">低（更隐蔽）</button>
+          <button type="button" data-value="medium" class="on">中（推荐）</button>
+          <button type="button" data-value="high">高（更抗压缩）</button>
+        </div>
+      </div>
+
+      <button class="primary" id="btn-embed">嵌入水印</button>
+      <div class="status" id="embed-status"></div>
+
+      <div id="embed-meta" class="meta hidden">
+        <h3>嵌入结果</h3>
+        <dl>
+          <dt>PSNR</dt><dd id="m-psnr">—</dd>
+          <dt>同步瓦片</dt><dd id="m-tiles">—</dd>
+          <dt>每比特票数</dt><dd id="m-votes">—</dd>
+          <dt>容量占用</dt><dd id="m-cap">—</dd>
+          <dt>图片尺寸</dt><dd id="m-size">—</dd>
+        </dl>
+        <button class="ghost" id="btn-download-wm">⬇ 下载含水印 PNG</button>
+      </div>
+    </section>
+
+    <section class="panel disabled" id="panel-attack">
+      <h2><span class="num">②</span> 施加攻击（模拟传播失真）</h2>
+
+      <div class="field">
+        <span>JPEG 重压缩质量：<b id="jpeg-val">70</b></span>
+        <input type="range" id="jpeg-q" min="20" max="100" value="70" />
+        <div class="range-labels"><span>20（狠）</span><span>70</span><span>100（轻）</span></div>
+      </div>
+
+      <div class="field">
+        <span>中心裁切保留比例：<b id="crop-val">75%</b></span>
+        <input type="range" id="crop-f" min="30" max="100" value="75" step="5" />
+        <div class="range-labels"><span>30%</span><span>75%</span><span>100%</span></div>
+        <small class="muted">裁切边界吸附到 8px 网格；100% = 不裁切。</small>
+      </div>
+
+      <div class="btn-row">
+        <button class="primary" id="btn-attack">应用攻击</button>
+        <button class="ghost" id="btn-attack-reset">重置为含水印图</button>
+      </div>
+      <div class="status" id="attack-status"></div>
+      <div id="attack-history" class="chips"></div>
+      <button class="primary subtle" id="btn-detect-attacked" disabled>检测受攻击图片 ③</button>
+    </section>
+
+    <section class="panel" id="panel-detect-upload">
+      <h2><span class="num">③</span> 独立检测（可选）</h2>
+      <p class="muted">上传任意图片（含水印图、截图、JPEG 转发件等）直接检测，无需先嵌入。</p>
+      <label class="field">
+        <span>待检测图片</span>
+        <input type="file" id="detect-file" accept="image/png,image/jpeg,image/webp,image/bmp" />
+      </label>
+      <button class="primary" id="btn-detect-upload">检测上传图片</button>
+      <div class="status" id="detect-upload-status"></div>
+    </section>
+
+    <!-- ===================== 右栏：预览与结果 ===================== -->
+    <section class="panel preview-panel">
+      <div class="preview-tabs">
+        <button class="tab on" data-tab="original">原图</button>
+        <button class="tab" data-tab="watermarked">含水印图</button>
+        <button class="tab" data-tab="target">受攻击图</button>
+        <button class="tab" data-tab="marked">失真标注图</button>
+      </div>
+      <div class="preview-wrap">
+        <div class="preview-pane on" data-pane="original">
+          <div class="placeholder">上传图片后显示原图</div>
+          <img id="img-original" alt="原图" />
+        </div>
+        <div class="preview-pane" data-pane="watermarked">
+          <div class="placeholder">嵌入后在此预览（PNG 无损）</div>
+          <img id="img-watermarked" alt="含水印图" />
+        </div>
+        <div class="preview-pane" data-pane="target">
+          <div class="placeholder">攻击后的待测图</div>
+          <img id="img-target" alt="受攻击图" />
+        </div>
+        <div class="preview-pane" data-pane="marked">
+          <div class="placeholder">检测后在此显示同步/失真标注</div>
+          <img id="img-marked" alt="失真标注图" />
+        </div>
+      </div>
+      <div class="legend" id="legend">
+        <span><i class="lg tile-ok"></i>同步健康瓦片</span>
+        <span><i class="lg tile-warn"></i>同步受损瓦片</span>
+        <span><i class="lg tile-bad"></i>同步失败瓦片</span>
+        <span><i class="lg sync-ok"></i>同步块正确</span>
+        <span><i class="lg blk-bad"></i>判决错误块</span>
+        <span><i class="lg blk-weak"></i>可疑弱块</span>
+        <span><i class="lg border"></i>瓦片边界(128px)</span>
+      </div>
+    </section>
+
+    <section class="panel result-panel hidden" id="result-panel">
+      <h2>检测结果</h2>
+      <div id="detect-verdict" class="verdict"></div>
+      <div class="recovered">
+        <span>恢复文本</span>
+        <code id="detect-text">—</code>
+      </div>
+
+      <h3>置信度</h3>
+      <div class="gauge">
+        <div class="gauge-row">
+          <span>总体置信度</span><b id="c-overall">—</b>
+        </div>
+        <div class="bar"><i id="bar-overall"></i></div>
+        <div class="gauge-row">
+          <span>同步相关峰</span><b id="c-sync">—</b>
+        </div>
+        <div class="bar"><i id="bar-sync"></i></div>
+        <div class="gauge-row">
+          <span>同步块一致率</span><b id="c-agree">—</b>
+        </div>
+        <div class="bar"><i id="bar-agree"></i></div>
+      </div>
+
+      <h3>逐比特置信度</h3>
+      <div class="bitgrid" id="bit-grid"></div>
+
+      <h3>技术指标</h3>
+      <dl class="metrics">
+        <dt>同步瓦片网格</dt><dd id="r-tiles">—</dd>
+        <dt>块相移(裁切量)</dt><dd id="r-phase">—</dd>
+        <dt>同步块 / 载荷块</dt><dd id="r-blocks">—</dd>
+        <dt>每比特投票数</dt><dd id="r-votes">—</dd>
+        <dt>疑似失真块</dt><dd id="r-marked">—</dd>
+      </dl>
+
+      <button class="ghost" id="btn-download-marked">⬇ 下载失真标注 PNG</button>
+    </section>
+  </main>
+
+  <footer>
+    Block-DCT spread-spectrum watermark · 8×8 DCT · 128px 同步瓦片 · 31-bit PN m-sequence
+    · 数据仅在内存/本地卷中临时保存
+  </footer>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
