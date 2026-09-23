@@ -61,6 +61,59 @@ WM_DATA_DIR=./data uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 此外，「独立检测」区支持直接上传任意图片（含水印图、JPEG 转发件、截图等）进行盲检测。
 
+### 检测报告可验证归档
+
+检测结果面板内可**勾选一次或多次检测结果**生成规范化 JSON 检测报告（归档）：
+
+- 报告包含：报告 ID / 生成时间 / 生成器版本、嵌入参数（文本、强度、PSNR、瓦片数、
+  算法常量快照）、每次检测的恢复文本、置信度、完整指标与当时的攻击参数，以及
+  **原图 / 含水印图 / 受攻击图（检测输入快照）/ 失真标注图**的引用（路径 + URL + SHA-256）。
+- 服务端为报告及其引用文件计算 **SHA-256 清单**（`manifest.entries`），报告写入
+  `reports/<report_id>/report.json`，并向数据目录下**仅追加**的 `archive.log.jsonl`
+  追加一条哈希链记录（`previous_entry_sha256` 串接，单条记录自带摘要）。
+- 点击「校验清单完整性」会重算全部摘要：全部一致时报告通过；否则返回
+  **首个缺失文件或首个摘要不一致项**，并同时报告归档哈希链状态（断链 / 记录被删改）。
+- 可一键**下载 JSON 报告**；报告引用文件可通过报告中的 URL 单独下载。
+- 报告存放在 `WM_DATA_DIR` 内，随 compose 命名卷持久化，且**不受任务数量上限清理影响**。
+- 归档检测输入快照按检测记录单独保存（`detections/det_*.source.png`），
+  后续继续叠加攻击不会改变既有报告引用的图片内容。
+
+报告 JSON（节选）：
+
+```json
+{
+  "schema_version": "1.0",
+  "report_id": "rep_8b24aed3390e",
+  "job_id": "756b2203d38f",
+  "generated_at_iso": "2026-09-23T05:07:46Z",
+  "detections": [
+    {
+      "detection_id": "det_f11ab49c384d",
+      "source": "target",
+      "detected": true,
+      "text": "机密-2026",
+      "confidence": 100.0,
+      "metrics": { "sync_score": 1.0, "sync_agreement": 1.0 },
+      "attack_history": [ { "type": "jpeg", "quality": 65 } ],
+      "references": [
+        { "role": "attacked", "path": ".../det_xxx.source.png",
+          "url": "/api/jobs/.../detections/det_xxx/source",
+          "sha256": "f1ac…", "bytes": 119576, "exists": true }
+      ]
+    }
+  ],
+  "manifest": {
+    "hash_algorithm": "sha-256",
+    "entries": [ { "path": "…/original.png", "sha256": "20c4…", "bytes": 203749 } ]
+  },
+  "archive": { "log_path": "archive.log.jsonl", "seq": 1, "append_only": true }
+}
+```
+
+> 报告自身的摘要 = SHA-256（报告删除 `manifest` 键后的规范化 JSON：UTF-8、键排序、
+> 无空白），因此不存在摘要依赖自身的循环；规范化规则记录在
+> `manifest.canonical_form` 中。
+
 ### 标注图颜色含义
 
 | 颜色 | 含义 |
@@ -151,8 +204,12 @@ WM_DATA_DIR=./data uvicorn app.main:app --host 0.0.0.0 --port 8000
 | GET | `/api/health` | 健康检查 |
 | POST | `/api/embed` | multipart：`image`(图片)、`text`、`strength`(low/medium/high)，返回任务 ID 与嵌入指标 |
 | POST | `/api/attack` | JSON：`{job_id, jpeg_quality?, crop_fraction?}`，生成受攻击待测图 |
-| POST | `/api/detect` | multipart：上传 `image` **或**传 `job_id`，返回文本、置信度、指标与标注图 URL |
+| POST | `/api/detect` | multipart：上传 `image` **或**传 `job_id`，返回文本、置信度、指标、检测记录 ID 与标注图 URL |
 | GET | `/api/jobs/{id}/{kind}` | 下载 `original` / `watermarked` / `target` / `marked` PNG |
+| GET | `/api/jobs/{id}/detections/{det_id}/{kind}` | 下载某次检测的 `source`（检测输入快照）/ `marked`（标注图）PNG |
+| POST | `/api/jobs/{id}/reports` | JSON：`{"detection_ids": ["det_…", ...]}`（1–20 条），生成可验证报告并追加归档，返回 `report_id`、`download_url`、`verify_url` |
+| GET | `/api/reports/{report_id}` | 读取报告 JSON（内联）；加 `?download=1` 以下载附件 |
+| POST | `/api/reports/{report_id}/verify` | 重算 SHA-256 清单；全部一致返回 200，否则返回 409 与**首个** `missing` / `digest_mismatch` 项及归档哈希链状态 |
 
 检测响应（节选）：
 
@@ -182,11 +239,13 @@ WM_DATA_DIR=./data uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
-| `WM_DATA_DIR` | `/data/wmbench` | 任务文件目录（原图/含水印图/攻击图/标注图，PNG） |
-| `WM_MAX_JOBS` | `200` | 最多保留任务数，超出自动清理最旧任务 |
+| `WM_DATA_DIR` | `/data/wmbench` | 任务文件目录（原图/含水印图/攻击图/标注图，PNG）与归档目录（`reports/`、`archive.log.jsonl`） |
+| `WM_MAX_JOBS` | `200` | 最多保留任务数，超出自动清理最旧任务（**归档报告不参与清理**） |
 
 上传限制：单文件 ≤ **16MB**，最大边长 **4096px**，最短边 ≥ **128px**。
-compose 默认把数据目录持久化到命名卷 `wm-data`。
+compose 默认把数据目录持久化到命名卷 `wm-data`；归档报告与仅追加日志
+（`$WM_DATA_DIR/reports/`、`$WM_DATA_DIR/archive.log.jsonl`）随之持久化，
+升级镜像后仍可下载与校验，Docker Compose 启动方式不变。
 
 ### 嵌入参数（在 `app/dctwm.py` 顶部调整）
 
@@ -206,13 +265,15 @@ compose 默认把数据目录持久化到命名卷 `wm-data`。
 .
 ├── app/
 │   ├── dctwm.py          # 核心算法：DCT 嵌入 / PN 同步 / 相移搜索 / 多数表决 / 失真标注
-│   ├── main.py           # FastAPI：任务存储、嵌入/攻击/检测接口、静态资源
+│   ├── archive.py        # 检测报告：规范化 JSON / SHA-256 清单 / 仅追加哈希链归档 / 校验
+│   ├── main.py           # FastAPI：任务存储、嵌入/攻击/检测/报告接口、静态资源
 │   └── static/
-│       ├── index.html    # 单页界面（嵌入 / 攻击 / 检测 三区）
+│       ├── index.html    # 单页界面（嵌入 / 攻击 / 检测 / 归档 四区）
 │       ├── style.css
 │       └── app.js
 ├── tests/
-│   └── test_core.py      # 核心算法数值验证（DCT/PN/鲁棒性全链路）
+│   ├── test_core.py      # 核心算法数值验证（DCT/PN/鲁棒性全链路）
+│   └── test_reports.py   # 报告归档接口与清单/哈希链校验（篡改、缺失、断链）
 ├── requirements.txt
 ├── Dockerfile
 ├── docker-compose.yml
@@ -223,6 +284,21 @@ compose 默认把数据目录持久化到命名卷 `wm-data`。
 
 ```bash
 python3 tests/test_core.py
+python3 -m pytest tests/test_reports.py -q    # 归档接口端到端测试
+```
+
+数据目录布局（`WM_DATA_DIR`）：
+
+```
+<job_id>/
+├── meta.json                         # 嵌入参数（独立上传检测时为 upload_only 轻量元数据）
+├── original.png / watermarked.png / target.png / marked.png
+└── detections/
+    ├── det_xxxxxxxxxxxx.json         # 检测记录（文本/置信度/指标/攻击参数快照）
+    ├── det_xxxxxxxxxxxx.source.png   # 该次检测输入快照
+    └── det_xxxxxxxxxxxx.png          # 该次检测失真标注图
+reports/rep_xxxxxxxxxxxx/report.json  # 规范化报告（含 SHA-256 清单）
+archive.log.jsonl                     # 仅追加归档记录（哈希链）
 ```
 
 ---

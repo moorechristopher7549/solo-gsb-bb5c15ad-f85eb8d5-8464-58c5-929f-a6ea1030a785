@@ -175,6 +175,29 @@
       </dl>
 
       <button class="ghost" id="btn-download-marked">⬇ 下载失真标注 PNG</button>
+
+      <h3>检测报告归档</h3>
+      <p class="muted">勾选本次任务中要收录的检测结果（可多选），生成含图片引用与 SHA-256 清单的规范化 JSON 报告，并写入仅追加归档记录。</p>
+      <div id="detect-list" class="detect-list"></div>
+      <div class="btn-row archive-row">
+        <button class="primary subtle" id="btn-archive" disabled>归档所选检测为报告</button>
+      </div>
+      <div class="status" id="archive-status"></div>
+      <div id="report-box" class="report-box hidden">
+        <div class="report-head">
+          <div>
+            <span class="muted">报告 ID</span>
+            <code id="report-id">—</code>
+          </div>
+          <span id="report-time" class="chip"></span>
+        </div>
+        <div id="report-verify" class="verify pending">尚未校验</div>
+        <div id="report-verify-detail" class="muted verify-detail"></div>
+        <div class="btn-row">
+          <button class="ghost" id="btn-download-report">⬇ 下载 JSON 报告</button>
+          <button class="ghost" id="btn-verify-report">🔍 校验清单完整性</button>
+        </div>
+      </div>
     </section>
   </main>
 
