@@ -21,6 +21,8 @@
       <span class="step" data-step="2">2 施加攻击</span>
       <span class="arrow">→</span>
       <span class="step" data-step="3">3 检测 / 标注</span>
+      <span class="arrow">→</span>
+      <span class="step" data-step="4">4 归档</span>
     </div>
   </header>
 
@@ -99,6 +101,38 @@
       </label>
       <button class="primary" id="btn-detect-upload">检测上传图片</button>
       <div class="status" id="detect-upload-status"></div>
+    </section>
+
+    <section class="panel" id="panel-archive">
+      <h2><span class="num">④</span> 检测报告归档（可验证）</h2>
+      <p class="muted">勾选同一任务下的一次或多次检测结果，生成含原图/含水印图/受攻击图引用、
+        恢复文本、置信度与参数的规范化 JSON 报告；服务端计算 SHA-256 清单并写入仅追加归档。</p>
+      <div id="history-list" class="history">
+        <p class="muted">尚无检测结果，请先执行检测。</p>
+      </div>
+      <button class="primary" id="btn-archive">生成归档报告</button>
+      <div class="status" id="archive-status"></div>
+
+      <div id="report-info" class="meta hidden">
+        <h3>归档报告</h3>
+        <dl>
+          <dt>报告 ID</dt><dd id="rep-id">—</dd>
+          <dt>生成时间</dt><dd id="rep-time">—</dd>
+          <dt>检测条数</dt><dd id="rep-dets">—</dd>
+          <dt>清单文件</dt><dd id="rep-files">—</dd>
+          <dt>归档序号</dt><dd id="rep-seq">—</dd>
+        </dl>
+        <div class="hash-row">
+          <span>报告 SHA-256</span>
+          <code id="rep-sha">—</code>
+        </div>
+        <div class="btn-row">
+          <button class="ghost" id="btn-download-report">⬇ 下载报告 JSON</button>
+          <button class="ghost" id="btn-verify-report">🔍 校验完整性</button>
+        </div>
+        <div class="status" id="verify-status"></div>
+        <div id="verify-entries" class="chips"></div>
+      </div>
     </section>
 
     <!-- ===================== 右栏：预览与结果 ===================== -->

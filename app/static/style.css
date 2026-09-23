@@ -301,6 +301,45 @@ button.primary.subtle { margin-top: 12px; background: linear-gradient(135deg, #2
 input[type="range"] { width: 100%; accent-color: var(--accent); }
 .range-labels { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); }
 
+/* ---------- 报告归档 ---------- */
+.history {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 180px;
+  overflow-y: auto;
+  margin-bottom: 12px;
+}
+.history-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.history-item:hover { border-color: var(--accent); }
+.history-item input { accent-color: var(--accent); }
+
+.hash-row { margin: 4px 0 12px; font-size: 12px; }
+.hash-row span { display: block; color: var(--muted); margin-bottom: 4px; }
+.hash-row code {
+  display: block;
+  background: var(--bg);
+  border: 1px dashed var(--line);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 11px;
+  word-break: break-all;
+  color: #9fd8ff;
+}
+
+.chip-ok { border-color: rgba(53, 208, 163, 0.5); color: #7ce8c8; }
+.chip-bad { border-color: rgba(235, 70, 70, 0.55); color: #ff9c9c; }
+
 footer {
   text-align: center;
   color: #46536c;

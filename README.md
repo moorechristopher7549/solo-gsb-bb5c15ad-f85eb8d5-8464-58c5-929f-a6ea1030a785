@@ -58,6 +58,11 @@ WM_DATA_DIR=./data uvicorn app.main:app --host 0.0.0.0 --port 8000
      完整瓦片即可），再对所有瓦片相同槽位的载荷块做**跨瓦片多数表决**；
    - 显示恢复文本、总体置信度、同步相关峰、同步块一致率与逐比特置信度；
    - 「失真标注图」用颜色标出健康/受损瓦片、判决错误块、可疑弱块，可**下载 PNG**。
+4. **报告归档（可验证）**：在「检测报告归档」区勾选同一任务下的一次或多次检测结果，
+   点击「生成归档报告」——服务端生成包含**原图 / 含水印图 / 受攻击图引用、恢复文本、
+   置信度、嵌入与攻击参数、生成时间**的规范化 JSON 报告，为报告及其引用文件计算
+   **SHA-256 清单**并写入**仅追加归档记录**；之后可随时**下载报告 JSON** 或
+   点击「校验完整性」重算清单，逐项确认未被篡改。
 
 此外，「独立检测」区支持直接上传任意图片（含水印图、JPEG 转发件、截图等）进行盲检测。
 
@@ -153,6 +158,9 @@ WM_DATA_DIR=./data uvicorn app.main:app --host 0.0.0.0 --port 8000
 | POST | `/api/attack` | JSON：`{job_id, jpeg_quality?, crop_fraction?}`，生成受攻击待测图 |
 | POST | `/api/detect` | multipart：上传 `image` **或**传 `job_id`，返回文本、置信度、指标与标注图 URL |
 | GET | `/api/jobs/{id}/{kind}` | 下载 `original` / `watermarked` / `target` / `marked` PNG |
+| POST | `/api/jobs/{id}/reports` | JSON：`{detections: [...]}`，生成规范化检测报告并归档（201） |
+| GET | `/api/reports/{report_id}` | 下载归档报告 JSON（含 SHA-256 清单） |
+| POST | `/api/reports/{report_id}/verify` | 重算清单，返回首个缺失 / 摘要不一致项 |
 
 检测响应（节选）：
 
@@ -176,14 +184,45 @@ WM_DATA_DIR=./data uvicorn app.main:app --host 0.0.0.0 --port 8000
 }
 ```
 
+### 检测报告归档（可验证）
+
+`POST /api/jobs/{id}/reports` 接收前端勾选的一次或多次检测结果（`/api/detect` 的响应
+加上 `source` / `recorded_at` 字段），完成三件事：
+
+1. **快照引用文件**：把任务当前的 `original / watermarked / target / marked` PNG 复制到
+   `{WM_DATA_DIR}/_reports/{report_id}/files/`，之后任务被自动清理也不影响归档；
+2. **生成规范化报告** `report.json`：键排序、UTF-8、固定缩进，内容字节级确定，包含
+   报告 ID、生成时间（ISO 8601 UTC）、嵌入/攻击参数、检测结果列表、引用文件相对路径
+   及其 **SHA-256 清单**（`manifest`）；
+3. **写入仅追加归档记录**：向 `{WM_DATA_DIR}/_reports/archive.jsonl` 追加一行
+   （只增不改），记录递增序号 `seq` 与报告本体的 `report_sha256`——这是校验报告
+   未被篡改的信任锚点。
+
+`POST /api/reports/{report_id}/verify` 按「归档记录 → report.json → 清单文件」的顺序
+重算 SHA-256 并逐项比对，响应中的 `first_failure` 给出**首个**缺失（`missing`）或
+摘要不一致（`digest_mismatch`）的条目，`entries` 列出每项状态：
+
+```json
+{
+  "ok": false,
+  "checked": 5,
+  "ok_count": 4,
+  "first_failure": {"name": "files/target.png", "status": "digest_mismatch",
+                    "expected": "b1498e…", "actual": "c27a11…"},
+  "archive_seq": 1
+}
+```
+
+> 归档目录 `_reports`（下划线开头）不参与任务数量清理，永久保留在数据卷中。
+
 ---
 
 ## 五、配置项（环境变量）
 
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
-| `WM_DATA_DIR` | `/data/wmbench` | 任务文件目录（原图/含水印图/攻击图/标注图，PNG） |
-| `WM_MAX_JOBS` | `200` | 最多保留任务数，超出自动清理最旧任务 |
+| `WM_DATA_DIR` | `/data/wmbench` | 任务文件目录（原图/含水印图/攻击图/标注图，PNG）；其下 `_reports/` 为报告归档 |
+| `WM_MAX_JOBS` | `200` | 最多保留任务数，超出自动清理最旧任务（归档不受影响） |
 
 上传限制：单文件 ≤ **16MB**，最大边长 **4096px**，最短边 ≥ **128px**。
 compose 默认把数据目录持久化到命名卷 `wm-data`。
@@ -206,9 +245,9 @@ compose 默认把数据目录持久化到命名卷 `wm-data`。
 .
 ├── app/
 │   ├── dctwm.py          # 核心算法：DCT 嵌入 / PN 同步 / 相移搜索 / 多数表决 / 失真标注
-│   ├── main.py           # FastAPI：任务存储、嵌入/攻击/检测接口、静态资源
+│   ├── main.py           # FastAPI：任务存储、嵌入/攻击/检测接口、报告归档与校验、静态资源
 │   └── static/
-│       ├── index.html    # 单页界面（嵌入 / 攻击 / 检测 三区）
+│       ├── index.html    # 单页界面（嵌入 / 攻击 / 检测 / 归档 四区）
 │       ├── style.css
 │       └── app.js
 ├── tests/
@@ -217,6 +256,18 @@ compose 默认把数据目录持久化到命名卷 `wm-data`。
 ├── Dockerfile
 ├── docker-compose.yml
 └── README.md
+```
+
+数据卷内布局（`WM_DATA_DIR`）：
+
+```
+{WM_DATA_DIR}/
+├── {job_id}/             # 临时任务：original/watermarked/target/marked.png + meta.json
+└── _reports/             # 永久归档（不参与任务清理）
+    ├── archive.jsonl     # 仅追加归档记录（每行一条：seq、report_id、report_sha256…）
+    └── {report_id}/
+        ├── report.json   # 规范化 JSON 报告（含引用文件 SHA-256 清单）
+        └── files/        # 引用文件快照（original/watermarked/target/marked.png）
 ```
 
 运行核心算法测试（本地安装依赖后）：
